@@ -511,6 +511,53 @@
     calc();
   };
 
+  /* ---- Lab: can a cache leak across people? ---- */
+  LABS.permcache = function (box) {
+    var body = box.querySelector('.lab-body');
+    body.innerHTML = '<p style="margin-bottom:8px">A team assistant has a cache in front of the model. <b>Ana</b> leads finance. <b>Ben</b> is a volunteer with no access to budgets.</p>' +
+      '<div class="grid2">' +
+      '<label class="toggle"><input type="checkbox" data-k="sem" checked><span><b>Semantic cache</b><br>Similar questions get the cached answer.</span></label>' +
+      '<label class="toggle"><input type="checkbox" data-k="who"><span><b>Person in the cache key</b><br>The key includes who asks and what they may see.</span></label>' +
+      '</div>' +
+      '<div class="lab-row" style="margin-top:10px"><button class="btn small" type="button" data-a="ana">1. Ana asks</button><button class="btn small" type="button" data-a="ben">2. Ben asks</button><button class="btn small ghost" type="button" data-a="reset">Reset</button></div>' +
+      '<div class="out" data-k="log">Press "1. Ana asks".</div><div data-k="v"></div>';
+    var cache = null, touched = false;
+    var log = body.querySelector('[data-k=log]'), v = body.querySelector('[data-k=v]');
+    function on(k) { return body.querySelector('[data-k=' + k + ']').checked; }
+    function line(t) { log.textContent = (log.textContent && log.textContent.indexOf('Press') !== 0 ? log.textContent + '\n' : '') + t; }
+    body.querySelector('[data-a=ana]').addEventListener('click', function () {
+      log.textContent = ''; v.innerHTML = '';
+      line('Ana: "What is the 2027 salary budget?"');
+      line('  cache: empty → model call with Ana\'s permissions');
+      line('  database returns the budget row (Ana may see it)');
+      line('  answer: "The 2027 salary budget is 182,000." → saved in the cache');
+      cache = { key: on('who') ? 'salary budget 2027 | finance-lead' : 'salary budget 2027' };
+      line('  cache key: "' + cache.key + '"');
+    });
+    body.querySelector('[data-a=ben]').addEventListener('click', function () {
+      if (!cache) { line('Run step 1 first.'); return; }
+      var sem = on('sem'), who = on('who');
+      line('');
+      line('Ben: "How much is budgeted for salaries in 2027?"');
+      var benKey = who ? 'salary budget 2027 | volunteer' : 'salary budget 2027';
+      var hit = sem && benKey === cache.key;
+      if (hit) {
+        line('  cache: similar question, same key "' + benKey + '" → HIT, no model call');
+        line('  answer: "The 2027 salary budget is 182,000."');
+        v.innerHTML = '<div class="verdict bad">Leak.<span>Ben got Ana\'s answer. The database never ran, so its permissions never applied. The cache key did not say who may see the answer.</span></div>';
+      } else {
+        line(sem ? '  cache: similar question, but key "' + benKey + '" ≠ "' + cache.key + '" → miss' : '  cache: exact match only; different words → miss');
+        line('  model call with Ben\'s permissions');
+        line('  database returns no rows (Ben may not see budgets)');
+        line('  answer: "I can\'t see budget data. Ask the finance lead."');
+        v.innerHTML = '<div class="verdict good">Safe.<span>' + (who ? 'The cache key includes the person\'s access, so a cached answer is only reused for someone who may see it.' : 'No semantic cache, so this time the wording was different enough. Turn the semantic cache back on and see what happens without the person in the key.') + '</span></div>';
+      }
+      if (!touched) { touched = true; labDone('permcache'); }
+    });
+    body.querySelector('[data-a=reset]').addEventListener('click', function () { cache = null; log.textContent = 'Press "1. Ana asks".'; v.innerHTML = ''; });
+    body.addEventListener('change', function () { cache = null; log.textContent = 'Settings changed. Press "1. Ana asks".'; v.innerHTML = ''; });
+  };
+
   [].forEach.call(doc.querySelectorAll('[data-lab]'), function (box) { var f = LABS[box.dataset.lab]; if (f) f(box); });
 
   /* ---------------- start ---------------- */
